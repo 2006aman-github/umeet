@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { FaRegCircleUser } from "react-icons/fa6";
 
 function VideoChat({
   localStream,
@@ -22,10 +23,6 @@ function VideoChat({
   //     setToggle(false);
   //   }
   // }, [remoteStream, localStream]);
-  useEffect(() => {
-    console.log("local video enabled: ", localVideoEnabled);
-    console.log("remote video enabled: ", remoteVideoEnabled);
-  }, [localVideoEnabled, remoteVideoEnabled]);
 
   useEffect(() => {
     // console.log("remote stream====>>>>", remoteStream);
@@ -48,7 +45,9 @@ function VideoChat({
             ref={localVideoRef}
           ></video>
         ) : (
-          <div className="w-full h-52 bg-gray-800 rounded-md"></div>
+          <div className="w-full h-52 flex items-center justify-center bg-gray-800 rounded-md">
+            <FaRegCircleUser className="w-20 h-20 text-gray-500" />
+          </div>
         )}
       </section>
       <section className="p-10 w-full flex flex-col bg-gray-800 gap-y-5">
@@ -60,7 +59,9 @@ function VideoChat({
             ref={remoteVideoRef}
           ></video>
         ) : (
-          <div className="w-full h-52 bg-gray-500 rounded-md"></div>
+          <div className="w-full h-52 flex items-center justify-center bg-gray-500 rounded-md">
+            <FaRegCircleUser className="w-20 h-20 text-gray-800" />
+          </div>
         )}
       </section>
     </div>

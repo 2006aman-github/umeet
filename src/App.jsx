@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-
+import { FaVideo, FaVideoSlash } from "react-icons/fa";
 import "./App.css";
 import Meet from "./Pages/Meet";
 import VideoChat from "./VideoChat";
 import { io } from "socket.io-client";
 import peerService from "./service/peerService";
+import { MdCallEnd } from "react-icons/md";
 
 let peerConfiguration = {
   iceServers: [
@@ -43,14 +44,15 @@ function App() {
 
   const handleCallUser = useCallback(async () => {
     setIamthecaller(true);
-    console.log("clicked start call");
+    console.log("signalling state", peerService.peer.signalingState);
     // await localStream?.getTracks().forEach((track) => track.stop());
     // check if rtcpeerconnection is close
-    if (peerService.peer.connectionState === "closed") {
+    if (peerService.peer.signalingState === "closed") {
       // console.log("reinitiating connection");
-      await peerService.peer.restartIce();
+      peerService.peer.signalingState;
+      await peerService.restartConnection();
+      // console.log("restarted connection", peerService.peer.connectionState);
     }
-    console.log(peerService.peer.connectionState, "rtcpeerconnection state");
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
       video: true,
@@ -61,16 +63,18 @@ function App() {
 
     socket.emit("user:call", { to: remoteSocketId, offer });
     setLocalStream(stream);
-  }, [remoteSocketId, socket, localStream]);
+  }, [remoteSocketId, socket]);
 
   // run  by client 2
   const handleIncomingCall = useCallback(
     async ({ from, offer }) => {
       // check if rtcpeerconnection is close
-      if (peerService.peer.connectionState === "closed") {
-        // console.log("reinitiating connection");
+      console.log("signalling state", peerService.peer.signalingState);
 
-        await peerService.peer.restartIce();
+      if (peerService.peer.signalingState === "closed") {
+        // console.log("reinitiating connection");
+        await peerService.restartConnection();
+        // console.log("restarted connection", peerService.peer.connectionState);
       }
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
@@ -95,7 +99,7 @@ function App() {
   const handleCallAccepted = useCallback(
     ({ from, ans }) => {
       peerService.setLocalDescription(ans);
-      // console.log("call accepted");
+      console.log("call accepted");
       sendStreams(localStream);
     },
     [sendStreams, localStream]
@@ -112,6 +116,7 @@ function App() {
 
   const handleNegotiaitionNeeded = useCallback(async () => {
     const offer = await peerService.getOffer();
+    console.log("im getting called");
     socket.emit("peer:nego:needed", { offer, to: remoteSocketId });
   }, [socket, remoteSocketId]);
 
@@ -129,9 +134,34 @@ function App() {
     sendStreams(localStream);
   }, [localStream, sendStreams]);
 
-  // useEffect(() => {
-  //   // console.log("remote socket id is", remoteSocketId);
-  // }, [remoteSocketId]);
+  const handleRemoteVideoStopped = () => {
+    setRemoteVideoEnabled(false);
+  };
+
+  const handleRemoteVideoRestarted = () => {
+    setRemoteVideoEnabled(true);
+  };
+
+  const gracefulCloseOfPeerConnection = async () => {
+    let peer = peerService.peer;
+
+    // Close each track
+    peer.getTracks().forEach((track) => {
+      track.stop();
+    });
+
+    // Remove all event listeners
+    peer.ontrack = null;
+    peer.onremovetrack = null;
+    peer.onicecandidate = null;
+    peer.oniceconnectionstatechange = null;
+    peer.onsignalingstatechange = null;
+
+    // Close the connection
+    peer.close();
+
+    peer = null;
+  };
 
   useEffect(() => {
     peerService.peer.addEventListener(
@@ -146,12 +176,15 @@ function App() {
     };
   }, [handleNegotiaitionNeeded, socket]);
 
+  // handling heartbreak
   const handleUserLeft = useCallback(async () => {
     setRemoteStream(null);
     setRemoteSocketId(null);
-
+    setRemoteVideoEnabled(false);
+    socket.emit("leave:room", { roomId: room });
+    gracefulCloseOfPeerConnection();
     console.log("your mate left!!!!");
-  }, []);
+  }, [socket, room]);
 
   useEffect(() => {
     peerService.peer.addEventListener("track", async (event) => {
@@ -177,6 +210,8 @@ function App() {
     newSocket.on("caller:join:complete", handleAddCallerSocketId);
     newSocket.on("user:left", handleUserLeft);
     newSocket.on("send:stream", handleIncomingStreamRequest);
+    newSocket.on("remote:video:stopped", handleRemoteVideoStopped);
+    newSocket.on("remote:video:restarted", handleRemoteVideoRestarted);
 
     return () => {
       newSocket.off("user:joined", handleUserJoined);
@@ -188,6 +223,8 @@ function App() {
       newSocket.off("caller:join:complete", handleAddCallerSocketId);
       newSocket.off("user:left", handleUserLeft);
       newSocket.off("send:stream", handleIncomingStreamRequest);
+      newSocket.off("remote:video:stopped", handleRemoteVideoStopped);
+      newSocket.off("remote:video:restarted", handleRemoteVideoRestarted);
     };
   }, [
     socket,
@@ -203,18 +240,35 @@ function App() {
   }, [email, room, socket]);
 
   // handling video start stop
-  const stopVideoStream = useCallback((stream) => {
-    const videoTracks = stream.getVideoTracks();
-    videoTracks.forEach((track) => (track.enabled = false));
-    setLocalVideoEnabled(false);
-  }, []);
+  const stopVideoStream = useCallback(
+    (stream) => {
+      socket.emit("my:video:stopped", { to: remoteSocketId });
+      const videoTracks = stream.getVideoTracks();
+      videoTracks.forEach((track) => (track.enabled = false));
+      setLocalVideoEnabled(false);
+    },
+    [socket, remoteSocketId]
+  );
 
-  function startVideoStream(stream) {
-    console.log("called");
-    const videoTracks = stream.getVideoTracks();
-    videoTracks.forEach((track) => (track.enabled = true));
-    setLocalVideoEnabled(true);
-  }
+  const startVideoStream = useCallback(
+    (stream) => {
+      socket.emit("my:video:restarted", { to: remoteSocketId });
+      const videoTracks = stream.getVideoTracks();
+      videoTracks.forEach((track) => (track.enabled = true));
+      setLocalVideoEnabled(true);
+    },
+    [socket, remoteSocketId]
+  );
+
+  // handling manual disconnection by a user
+  const handleEndCall = async () => {
+    setRemoteStream(null);
+    setRemoteSocketId(null);
+    setRemoteVideoEnabled(false);
+    // console.log("hey");
+    socket.emit("leave:room", { roomId: room });
+    gracefulCloseOfPeerConnection();
+  };
 
   return (
     <div className="w-screen ">
@@ -227,7 +281,16 @@ function App() {
           remoteStream={remoteStream}
         />
         <br />
-        <h2>{remoteSocketId || "No one in the room"}</h2>
+        <h2>
+          {(
+            <>
+              Connected with:{" "}
+              <span className="bg-green-600 p-1 rounded-md ">
+                {remoteSocketId}
+              </span>
+            </>
+          ) || "No one in the room"}
+        </h2>
         <div>
           {!remoteSocketId && (
             <button onClick={() => handleJoinRoom()}>Join Room</button>
@@ -243,27 +306,31 @@ function App() {
             </button>
           )}
         </div>
-        <div>
-          <button
-            onClick={() =>
-              localVideoEnabled
-                ? stopVideoStream(localStream)
-                : startVideoStream(localStream)
-            }
-          >
-            {localVideoEnabled ? "stop video" : "start video"}
-          </button>
-        </div>
-
-        <div>
-          {remoteSocketId && remoteStream && (
-            <>
-              <button onClick={() => console.log("ending call")}>
-                End Call
+        <section className="m-2 p-5 bg-gray-700 rounded-md flex items-center justify-between">
+          <div>
+            {remoteSocketId && localStream && (
+              <button
+                className={`${
+                  localVideoEnabled ? "bg-red-500" : "to-blue-400"
+                } `}
+                onClick={() =>
+                  localVideoEnabled
+                    ? stopVideoStream(localStream)
+                    : startVideoStream(localStream)
+                }
+              >
+                {localVideoEnabled ? <FaVideoSlash /> : <FaVideo />}
               </button>
-            </>
-          )}
-        </div>
+            )}
+          </div>
+          <div>
+            {remoteSocketId && remoteStream && (
+              <button className={"bg-red-500"} onClick={() => handleEndCall()}>
+                <MdCallEnd />
+              </button>
+            )}
+          </div>
+        </section>
       </div>
     </div>
   );

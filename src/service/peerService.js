@@ -1,17 +1,22 @@
 class PeerService {
   constructor() {
+    this.peerConfig = {
+      iceServers: [
+        {
+          urls: [
+            "stun:stun.l.google.com:19302",
+            "stun:global.stun.twilio.com:3478",
+          ],
+        },
+      ],
+    };
     if (!this.peer) {
-      this.peer = new RTCPeerConnection({
-        iceServers: [
-          {
-            urls: [
-              "stun:stun.l.google.com:19302",
-              "stun:global.stun.twilio.com:3478",
-            ],
-          },
-        ],
-      });
+      this.peer = new RTCPeerConnection(this.peerConfig);
     }
+  }
+
+  async restartConnection() {
+    this.peer = new RTCPeerConnection(this.peerConfig);
   }
 
   async getAnswer(offer) {
