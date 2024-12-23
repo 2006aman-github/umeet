@@ -15,7 +15,7 @@ let peerConfiguration = {
   ],
 };
 
-const SERVER_URL = "http://192.168.29.194:8181";
+const SERVER_URL = import.meta.env.VITE_SERVER_URL;
 
 function App() {
   const [localStream, setLocalStream] = useState(null);
@@ -282,14 +282,16 @@ function App() {
         />
         <br />
         <h2>
-          {(
+          {remoteSocketId ? (
             <>
               Connected with:{" "}
               <span className="bg-green-600 p-1 rounded-md ">
                 {remoteSocketId}
               </span>
             </>
-          ) || "No one in the room"}
+          ) : (
+            "Not connected to any peer"
+          )}
         </h2>
         <div>
           {!remoteSocketId && (
