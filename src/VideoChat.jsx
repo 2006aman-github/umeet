@@ -45,7 +45,7 @@ function VideoChat({
         <h2 className="text-lg uppercase">local stream</h2>
         {localVideoEnabled ? (
           <video
-            muted={!localAudioEnabled}
+            muted
             className="w-full h-52 rounded-md"
             autoPlay
             ref={localVideoRef}
