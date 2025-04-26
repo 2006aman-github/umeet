@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { FaMicrophone, FaMicrophoneSlash } from "react-icons/fa";
 import { FaRegCircleUser } from "react-icons/fa6";
 
 function VideoChat({
@@ -6,6 +7,10 @@ function VideoChat({
   remoteStream,
   localVideoEnabled,
   remoteVideoEnabled,
+  localAudioEnabled,
+  remoteAudioEnabled,
+  name,
+  remoteName,
 }) {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
@@ -40,6 +45,7 @@ function VideoChat({
         <h2 className="text-lg uppercase">local stream</h2>
         {localVideoEnabled ? (
           <video
+            muted={!localAudioEnabled}
             className="w-full h-52 rounded-md"
             autoPlay
             ref={localVideoRef}
@@ -49,11 +55,13 @@ function VideoChat({
             <FaRegCircleUser className="w-20 h-20 text-gray-500" />
           </div>
         )}
+        <span>{name}</span>
       </section>
       <section className="p-10 w-full flex flex-col bg-gray-800 gap-y-5">
         <h2 className="text-lg uppercase">remote stream</h2>
         {remoteVideoEnabled ? (
           <video
+            muted={!remoteAudioEnabled}
             className="w-full h-52 rounded-md"
             autoPlay
             ref={remoteVideoRef}
@@ -63,6 +71,16 @@ function VideoChat({
             <FaRegCircleUser className="w-20 h-20 text-gray-800" />
           </div>
         )}
+        {remoteAudioEnabled ? (
+          <span className="bg-blue-500 rounded-full p-3 w-fit">
+            <FaMicrophone />
+          </span>
+        ) : (
+          <span className="bg-red-500 rounded-full p-3 w-fit">
+            <FaMicrophoneSlash />
+          </span>
+        )}
+        <span>{remoteName}</span>
       </section>
     </div>
   );
