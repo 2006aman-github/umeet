@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FaVideo, FaVideoSlash } from "react-icons/fa";
+import {
+  FaMicrophoneAlt,
+  FaMicrophoneAltSlash,
+  FaVideo,
+  FaVideoSlash,
+} from "react-icons/fa";
 import "./App.css";
 import Meet from "./Pages/Meet";
 import VideoChat from "./VideoChat";
 import { io } from "socket.io-client";
 import peerService from "./service/peerService";
 import { MdCallEnd } from "react-icons/md";
+import { generateRoomId } from "./service/roomDetails";
 
 let peerConfiguration = {
   iceServers: [
@@ -22,29 +28,48 @@ function App() {
   const [remoteStream, setRemoteStream] = useState(null);
   const [socket, setSocket] = useState(null);
   const [remoteSocketId, setRemoteSocketId] = useState(null);
-  const [email, setEmail] = useState("amanjames122@gmail.com");
-  const [room, setRoom] = useState("asdlsa21");
+  const [room, setRoom] = useState(null);
   const [iamthecaller, setIamthecaller] = useState(false);
   const [localVideoEnabled, setLocalVideoEnabled] = useState(false);
   const [remoteVideoEnabled, setRemoteVideoEnabled] = useState(false);
+  const [localAudioEnabled, setLocalAudioEnabled] = useState(false);
+  const [remoteAudioEnabled, setRemoteAudioEnabled] = useState(false);
+  const [name, setName] = useState(null);
+  const [remoteName, setRemoteName] = useState(null);
 
   const handleUserJoined = useCallback(
-    ({ id }) => {
+    (data) => {
       // console.log(`socket ${id} joined room`);
-      setRemoteSocketId(id);
-      socket.emit("caller:join:complete", { to: id });
+      setRemoteSocketId(data.id);
+      socket.emit("caller:join:complete", {
+        to: data.id,
+        name, //this is my name (local)
+      });
+      setRemoteName(data.name);
     },
-    [socket]
+    [socket, name]
   );
+  const handleMyJoining = useCallback(({ room, name }) => {
+    console.log("i joined yoo");
+    setRoom(room);
+    setName(name);
+  }, []);
 
-  const handleAddCallerSocketId = useCallback(({ id }) => {
-    // console.log("works!!!!");
+  const handleILeft = useCallback(() => {
+    setRoom(null);
+  }, []);
+
+  const roomNotFound = ({ message }) => window.alert(message);
+
+  const handleAddCallerDetails = useCallback(({ id, name }) => {
+    console.log("bro joined  ", name);
     setRemoteSocketId(id);
+    setRemoteName(name);
   }, []);
 
   const handleCallUser = useCallback(async () => {
     setIamthecaller(true);
-    console.log("signalling state", peerService.peer.signalingState);
+    console.log("signalling state => ", peerService.peer.signalingState);
     // await localStream?.getTracks().forEach((track) => track.stop());
     // check if rtcpeerconnection is close
     if (peerService.peer.signalingState === "closed") {
@@ -54,7 +79,7 @@ function App() {
       // console.log("restarted connection", peerService.peer.connectionState);
     }
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
+      audio: true,
       video: true,
     });
     const offer = await peerService.getOffer();
@@ -77,7 +102,7 @@ function App() {
         // console.log("restarted connection", peerService.peer.connectionState);
       }
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
+        audio: true,
         video: true,
       });
       setLocalStream(stream);
@@ -134,12 +159,23 @@ function App() {
     sendStreams(localStream);
   }, [localStream, sendStreams]);
 
+  // remote video event handlers
+
   const handleRemoteVideoStopped = () => {
     setRemoteVideoEnabled(false);
   };
 
   const handleRemoteVideoRestarted = () => {
     setRemoteVideoEnabled(true);
+  };
+
+  // remote audio event handlers
+
+  const handleRemoteAudioStopped = () => {
+    setRemoteAudioEnabled(false);
+  };
+  const handleRemoteAudioRestarted = () => {
+    setRemoteAudioEnabled(true);
   };
 
   const gracefulCloseOfPeerConnection = async () => {
@@ -163,6 +199,11 @@ function App() {
     peer = null;
   };
 
+  // handle error message from socket server
+  const handleErrorMessage = ({ message }) => {
+    window.alert(message);
+  };
+
   useEffect(() => {
     peerService.peer.addEventListener(
       "negotiationneeded",
@@ -181,7 +222,7 @@ function App() {
     setRemoteStream(null);
     setRemoteSocketId(null);
     setRemoteVideoEnabled(false);
-    socket.emit("leave:room", { roomId: room });
+    socket.emit("room:leave", { roomId: room });
     gracefulCloseOfPeerConnection();
     console.log("your mate left!!!!");
   }, [socket, room]);
@@ -201,30 +242,48 @@ function App() {
       newSocket = io(SERVER_URL);
       setSocket(newSocket);
     }
+    newSocket.on("disconnect");
+    newSocket.on("error:message", handleErrorMessage);
+
     newSocket.on("user:joined", handleUserJoined);
-    newSocket.on("room:join");
+    newSocket.on("room:notfound", roomNotFound);
+    newSocket.on("room:join", handleMyJoining);
+    newSocket.on("room:left", handleILeft);
     newSocket.on("incoming:call", handleIncomingCall);
     newSocket.on("call:accepted", handleCallAccepted);
     newSocket.on("peer:nego:needed", handleNegoNeedIncoming);
     newSocket.on("peer:nego:final", handleNegoNeedFinal);
-    newSocket.on("caller:join:complete", handleAddCallerSocketId);
+    newSocket.on("caller:join:complete", handleAddCallerDetails);
     newSocket.on("user:left", handleUserLeft);
     newSocket.on("send:stream", handleIncomingStreamRequest);
+    // video related events
     newSocket.on("remote:video:stopped", handleRemoteVideoStopped);
     newSocket.on("remote:video:restarted", handleRemoteVideoRestarted);
+    // audio related events
+    newSocket.on("remote:audio:restarted", handleRemoteAudioRestarted);
+    newSocket.on("remote:audio:stopped", handleRemoteAudioStopped);
 
     return () => {
+      newSocket.off("disconnect");
+      newSocket.off("error:message", handleErrorMessage);
+
       newSocket.off("user:joined", handleUserJoined);
-      newSocket.off("room:join");
+      newSocket.off("room:join", handleMyJoining);
+      newSocket.off("room:notfound", roomNotFound);
+      newSocket.off("room:left", handleILeft);
       newSocket.off("incoming:call", handleIncomingCall);
       newSocket.off("call:accepted", handleCallAccepted);
       newSocket.off("peer:nego:needed", handleNegoNeedIncoming);
       newSocket.off("peer:nego:final", handleNegoNeedFinal);
-      newSocket.off("caller:join:complete", handleAddCallerSocketId);
+      newSocket.off("caller:join:complete", handleAddCallerDetails);
       newSocket.off("user:left", handleUserLeft);
       newSocket.off("send:stream", handleIncomingStreamRequest);
+      // video related events
       newSocket.off("remote:video:stopped", handleRemoteVideoStopped);
       newSocket.off("remote:video:restarted", handleRemoteVideoRestarted);
+      // audio related events
+      newSocket.off("remote:audio:restarted", handleRemoteAudioRestarted);
+      newSocket.off("remote:audio:stopped", handleRemoteAudioStopped);
     };
   }, [
     socket,
@@ -235,9 +294,18 @@ function App() {
     handleNegoNeedFinal,
   ]);
 
+  const handleCreateRoom = useCallback(() => {
+    const name = window.prompt("What shall we call you ?");
+    setName(name);
+    const roomId = generateRoomId(10);
+    socket.emit("room:create", { name, room: roomId });
+  }, [socket]);
+
   const handleJoinRoom = useCallback(() => {
-    socket.emit("room:join", { email, room });
-  }, [email, room, socket]);
+    const name = window.prompt("What shall we call you ?");
+    const roomId = window.prompt("Enter the room ID to join.");
+    socket.emit("room:join", { name, room: roomId });
+  }, [socket]);
 
   // handling video start stop
   const stopVideoStream = useCallback(
@@ -260,13 +328,36 @@ function App() {
     [socket, remoteSocketId]
   );
 
+  // handling audio start and stop
+  const startAudioStream = useCallback(
+    (stream) => {
+      socket.emit("my:audio:restarted", { to: remoteSocketId });
+      const audioTracks = stream.getAudioTracks();
+      audioTracks.forEach((track) => (track.enabled = true));
+      setLocalAudioEnabled(true);
+    },
+    [socket, remoteSocketId]
+  );
+
+  const stopAudioStream = useCallback(
+    (stream) => {
+      socket.emit("my:audio:stopped", { to: remoteSocketId });
+      const audioTracks = stream.getAudioTracks();
+      audioTracks.forEach((track) => (track.enabled = false));
+      setLocalAudioEnabled(false);
+    },
+    [socket, remoteSocketId]
+  );
+
   // handling manual disconnection by a user
   const handleEndCall = async () => {
     setRemoteStream(null);
     setRemoteSocketId(null);
     setRemoteVideoEnabled(false);
+    setRemoteName(null);
+
     // console.log("hey");
-    socket.emit("leave:room", { roomId: room });
+    socket.emit("room:leave", { roomId: room });
     gracefulCloseOfPeerConnection();
   };
 
@@ -277,27 +368,51 @@ function App() {
         <VideoChat
           remoteVideoEnabled={remoteVideoEnabled}
           localVideoEnabled={localVideoEnabled}
+          localAudioEnabled={localAudioEnabled}
+          remoteAudioEnabled={remoteAudioEnabled}
           localStream={localStream}
           remoteStream={remoteStream}
+          name={name}
+          remoteName={remoteName}
         />
         <br />
+        <div className="py-5 uppercase">
+          {room ? (
+            <>
+              <p className="text-green-500">Joined room {room}</p>
+            </>
+          ) : (
+            <p className="text-red-500 ">Not connected to any room</p>
+          )}
+        </div>
         <h2>
           {remoteSocketId ? (
             <>
               Connected with:{" "}
               <span className="bg-green-600 p-1 rounded-md ">
-                {remoteSocketId}
+                {remoteName || remoteSocketId}
               </span>
             </>
           ) : (
-            "Not connected to any peer"
+            ""
           )}
         </h2>
-        <div>
-          {!remoteSocketId && (
-            <button onClick={() => handleJoinRoom()}>Join Room</button>
+        <br />
+        <div className="flex gap-3 items-center justify-center">
+          {!remoteSocketId && !room ? (
+            <>
+              <button onClick={() => handleJoinRoom()}>Join Room</button>
+              <button onClick={() => handleCreateRoom()}>Create Room</button>
+            </>
+          ) : (
+            <>
+              {!remoteStream ? (
+                <button onClick={() => handleEndCall()}>Leave Room</button>
+              ) : null}
+            </>
           )}
         </div>
+        <br />
         <div>
           {remoteSocketId && !remoteStream && (
             <button
@@ -311,18 +426,36 @@ function App() {
         <section className="m-2 p-5 bg-gray-700 rounded-md flex items-center justify-between">
           <div>
             {remoteSocketId && localStream && (
-              <button
-                className={`${
-                  localVideoEnabled ? "bg-red-500" : "to-blue-400"
-                } `}
-                onClick={() =>
-                  localVideoEnabled
-                    ? stopVideoStream(localStream)
-                    : startVideoStream(localStream)
-                }
-              >
-                {localVideoEnabled ? <FaVideoSlash /> : <FaVideo />}
-              </button>
+              <div className="flex gap-x-3">
+                <button
+                  className={`${
+                    localVideoEnabled ? "bg-blue-500" : "bg-red-500"
+                  } border-none outline-none`}
+                  onClick={() =>
+                    localVideoEnabled
+                      ? stopVideoStream(localStream)
+                      : startVideoStream(localStream)
+                  }
+                >
+                  {localVideoEnabled ? <FaVideo /> : <FaVideoSlash />}
+                </button>
+                <button
+                  className={`${
+                    localAudioEnabled ? "bg-blue-500" : "bg-red-500"
+                  } border-none outline-none`}
+                  onClick={() =>
+                    localAudioEnabled
+                      ? stopAudioStream(localStream)
+                      : startAudioStream(localStream)
+                  }
+                >
+                  {localAudioEnabled ? (
+                    <FaMicrophoneAlt />
+                  ) : (
+                    <FaMicrophoneAltSlash />
+                  )}
+                </button>
+              </div>
             )}
           </div>
           <div>
