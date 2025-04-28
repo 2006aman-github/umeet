@@ -1,13 +1,14 @@
 import { createContext, useReducer } from "react";
-import { initialState, remoteDataReducers } from "./RemoteReducers";
+import { remoteInitialState, remoteDataReducers } from "./RemoteReducers";
 
 export const RemoteContext = createContext();
 
 export const RemoteContextProvider = ({ children }) => {
   const [remoteData, remoteDataDispatch] = useReducer(
     remoteDataReducers,
-    initialState
+    remoteInitialState
   );
+  // console.log("RemoteContextProvider", remoteData);
   return (
     <RemoteContext.Provider value={{ remoteData, remoteDataDispatch }}>
       {children}

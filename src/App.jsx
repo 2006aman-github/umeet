@@ -16,14 +16,6 @@ import {
 } from "react-icons/fa";
 import { MdCallEnd } from "react-icons/md";
 
-let peerConfiguration = {
-  iceServers: [
-    {
-      urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"],
-    },
-  ],
-};
-
 const SERVER_URL = import.meta.env.VITE_SERVER_URL;
 
 function App() {
@@ -31,18 +23,14 @@ function App() {
 
   const [room, setRoom] = useState(null);
   const [iamthecaller, setIamthecaller] = useState(false);
+  const [incomingSocketId, setIncomingSocketId] = useState(null);
 
   // remotedata context access
   const {
-    remoteData: {
-      remoteSocketId,
-      remoteStream,
-      remoteVideoEnabled,
-      remoteAudioEnabled,
-      remoteName,
-    },
+    remoteData: { remoteSocketIds, remoteStreams },
     remoteDataDispatch,
   } = useContext(RemoteContext);
+  // console.log(remoteSocketIds);
 
   // localdata context access
   const {
@@ -56,12 +44,14 @@ function App() {
     localDataDispatch,
   } = useContext(LocalContext);
   const {
-    setRemoteAudioEnabled,
-    setRemoteVideoEnabled,
-    setRemoteName,
-    setRemoteSocketId,
-    setRemoteStream,
+    addSocketsOfNewlyJoinedRoom,
+    addRemoteSocketId,
+    deleteRemoteSocketId,
+    addRemoteStream,
+    deleteRemoteStream,
     setAllToDefault,
+    setRemoteVideoEnabled,
+    setRemoteAudioEnabled,
   } = remoteReducerActions;
 
   const {
@@ -73,51 +63,66 @@ function App() {
 
   const handleUserJoined = useCallback(
     (data) => {
-      console.log("my name is :", localName);
-      // console.log(`socket ${id} joined room`);
+      // console.log("new user joined :", data.name, " with id ", data.id);
+      // console.log(`socket ${data.id} joined room`);
       remoteDataDispatch({
-        type: setRemoteSocketId,
-        payload: { value: data.id },
+        type: addRemoteSocketId,
+        payload: { id: data.id },
       });
+      setIncomingSocketId(data.id);
       socket.emit("caller:join:complete", {
         to: data.id,
         name: localName, //this is my localName (local)
       });
-      remoteDataDispatch({
-        type: setRemoteName,
-        payload: { value: data.name },
-      });
+      // remoteDataDispatch({
+      //   type: setRemoteName,
+      //   payload: { value: data.name },
+      // });
     },
-    [socket, remoteName, localName]
+    [socket, localName, remoteDataDispatch, addRemoteSocketId]
     // add localname as dependency took 40 mins  to debug
   );
-  const handleMyJoining = useCallback(({ room, name }) => {
-    console.log("i joined yoo", name);
-    setRoom(room);
-    localDataDispatch({ type: setlocalName, payload: { value: name } });
-  }, []);
+  const handleMyJoining = useCallback(
+    ({ room, name, otherSockets }) => {
+      // othersockets are being sent but of no use
+      // console.log("i joined yoo", otherSockets);
+      setRoom(room);
+      // if (otherSockets.length !== 0) {
+      //   remoteDataDispatch({
+      //     type: addSocketsOfNewlyJoinedRoom,
+      //     payload: { ids: otherSockets },
+      //   });
+      // }
+      localDataDispatch({ type: setlocalName, payload: { value: name } });
+    },
+    [setlocalName, localDataDispatch]
+  );
 
   const handleILeft = useCallback(() => {
     setRoom(null);
   }, []);
 
-  const roomNotFound = ({ message }) => window.alert(message);
+  const roomNotFound = useCallback(({ message }) => window.alert(message), []);
 
-  const handleAddCallerDetails = useCallback(({ id, name }) => {
-    console.log("bro joined  ", name);
-    remoteDataDispatch({
-      type: setRemoteSocketId,
-      payload: { value: id },
-    });
-    remoteDataDispatch({
-      type: setRemoteName,
-      payload: { value: name },
-    });
-  }, []);
+  const handleAddCallerDetails = useCallback(
+    ({ id, name }) => {
+      remoteDataDispatch({
+        type: addRemoteSocketId,
+        payload: { id: id },
+      });
+
+      setIncomingSocketId(id);
+      // remoteDataDispatch({
+      //   type: setRemoteName,
+      //   payload: { value: name },
+      // });
+    },
+    [addRemoteSocketId, remoteDataDispatch]
+  );
 
   const handleCallUser = useCallback(async () => {
     setIamthecaller(true);
-    console.log("signalling state => ", peerService.peer.signalingState);
+    // console.log("signalling state => ", peerService.peer.signalingState);
     // await localStream?.getTracks().forEach((track) => track.stop());
     // check if rtcpeerconnection is close
     if (peerService.peer.signalingState === "closed") {
@@ -130,21 +135,33 @@ function App() {
       audio: true,
       video: true,
     });
+
+    // make a call to all people inside room
+
     const offer = await peerService.getOffer();
     // console.log(`Making Call!!!! ====> mystream`, stream);
 
-    localDataDispatch({ type: setlocalVideoEnabled, payload: { value: true } });
+    localDataDispatch({
+      type: setlocalVideoEnabled,
+      payload: { value: true, id: stream.id },
+    });
 
-    socket.emit("user:call", { to: remoteSocketId, offer });
+    socket.emit("user:call", { to: incomingSocketId, offer });
 
     localDataDispatch({ type: setlocalStream, payload: { value: stream } });
-  }, [remoteSocketId, socket]);
+  }, [
+    incomingSocketId,
+    socket,
+    setlocalStream,
+    setlocalVideoEnabled,
+    localDataDispatch,
+  ]);
 
   // run  by client 2
   const handleIncomingCall = useCallback(
     async ({ from, offer }) => {
       // check if rtcpeerconnection is close
-      console.log("signalling state", peerService.peer.signalingState);
+      // console.log("signalling state", peerService.peer.signalingState);
 
       if (peerService.peer.signalingState === "closed") {
         // console.log("reinitiating connection");
@@ -167,7 +184,7 @@ function App() {
       const ans = await peerService.getAnswer(offer);
       socket.emit("call:accepted", { to: from, ans });
     },
-    [socket]
+    [socket, setlocalStream, setlocalVideoEnabled, localDataDispatch]
   );
 
   const sendStreams = useCallback((stream) => {
@@ -180,7 +197,7 @@ function App() {
   const handleCallAccepted = useCallback(
     ({ ans }) => {
       peerService.setLocalDescription(ans);
-      console.log("call accepted");
+      // console.log("call accepted");
       sendStreams(localStream);
     },
     [sendStreams, localStream]
@@ -195,11 +212,12 @@ function App() {
     [socket]
   );
 
+  // here important change is to be made
   const handleNegotiaitionNeeded = useCallback(async () => {
     const offer = await peerService.getOffer();
     // console.log("im getting called");
-    socket.emit("peer:nego:needed", { offer, to: remoteSocketId });
-  }, [socket, remoteSocketId]);
+    socket.emit("peer:nego:needed", { offer, to: incomingSocketId });
+  }, [socket, incomingSocketId]);
 
   // handling peer:nego:final
   const handleNegoNeedFinal = useCallback(
@@ -217,40 +235,71 @@ function App() {
 
   // remote video event handlers
 
-  const handleRemoteVideoStopped = () => {
-    remoteDataDispatch({
-      type: setRemoteVideoEnabled,
-      payload: { value: false },
-    });
-  };
+  const handleRemoteVideoStopped = useCallback(
+    ({ from: id }) => {
+      // console.log("remote video stopped", remoteStreams);
+      const index = remoteStreams.findIndex((stream) => stream.socketid === id);
+      if (index !== -1) {
+        remoteDataDispatch({
+          type: setRemoteVideoEnabled,
+          payload: { value: false, id: remoteStreams[index].socketid },
+        });
+      }
+      // console.log("remote stream", remoteStreams);
+    },
+    [remoteDataDispatch, remoteStreams, setRemoteVideoEnabled]
+  );
 
-  const handleRemoteVideoRestarted = () => {
-    remoteDataDispatch({
-      type: setRemoteVideoEnabled,
-      payload: { value: true },
-    });
-  };
+  const handleRemoteVideoRestarted = useCallback(
+    ({ from: id }) => {
+      const index = remoteStreams.findIndex((stream) => stream.socketid === id);
+      // console.log("remote video started", remoteStreams);
+
+      if (index !== -1) {
+        remoteDataDispatch({
+          type: setRemoteVideoEnabled,
+          payload: { value: true, id: remoteStreams[index].socketid },
+        });
+      }
+    },
+    [remoteDataDispatch, remoteStreams, setRemoteVideoEnabled]
+  );
 
   // remote audio event handlers
 
-  const handleRemoteAudioStopped = () => {
-    remoteDataDispatch({
-      type: setRemoteAudioEnabled,
-      payload: { value: false },
-    });
-  };
-  const handleRemoteAudioRestarted = () => {
-    remoteDataDispatch({
-      type: setRemoteAudioEnabled,
-      payload: { value: true },
-    });
-  };
+  const handleRemoteAudioStopped = useCallback(
+    ({ from: id }) => {
+      // console.log("remote audio stopped");
+      const index = remoteStreams.findIndex((stream) => stream.socketid === id);
+      if (index !== -1) {
+        remoteDataDispatch({
+          type: setRemoteAudioEnabled,
+          payload: { value: false, id: remoteStreams[index].scoketid },
+        });
+      }
+    },
+    [remoteDataDispatch, remoteStreams, setRemoteAudioEnabled]
+  );
+  const handleRemoteAudioRestarted = useCallback(
+    ({ from: id }) => {
+      // console.log("remote audio restarted");
+
+      const index = remoteStreams.findIndex((stream) => stream.socketid === id);
+      if (index !== -1) {
+        remoteDataDispatch({
+          type: setRemoteAudioEnabled,
+          payload: { value: true, id: remoteStreams[index].socketid },
+        });
+      }
+    },
+    [remoteDataDispatch, remoteStreams, setRemoteAudioEnabled]
+  );
 
   const gracefulCloseOfPeerConnection = async () => {
     let peer = peerService.peer;
-
+    if (!peer) return;
     // Close each track
-    peer.getTracks().forEach((track) => {
+    peer?.getTracks().forEach((track) => {
       track.stop();
     });
 
@@ -262,7 +311,7 @@ function App() {
     peer.onsignalingstatechange = null;
 
     // Close the connection
-    peer.close();
+    peer?.close();
 
     peer = null;
   };
@@ -285,29 +334,53 @@ function App() {
     };
   }, [handleNegotiaitionNeeded, socket]);
 
+  // changes at signalling server
   // handling heartbreak
-  const handleUserLeft = useCallback(async () => {
-    remoteDataDispatch({
-      type: setAllToDefault,
-    });
-    socket.emit("room:leave", { roomId: room });
-    gracefulCloseOfPeerConnection();
-    console.log("your mate left!!!!");
-  }, [socket, room]);
+  const handleUserLeft = useCallback(
+    async ({ id }) => {
+      // get the stream using this socket id from param
+      remoteDataDispatch({
+        type: deleteRemoteSocketId,
+        payload: { id: id },
+      });
+      const index = remoteStreams.findIndex((stream) => stream.socketid === id);
+      if (index !== -1) {
+        remoteDataDispatch({
+          type: deleteRemoteStream,
+          payload: { value: remoteStreams[index].obj },
+        });
+      }
+
+      // socket.emit("room:leave", { roomId: room });
+      gracefulCloseOfPeerConnection();
+      // console.log("your mate left!!!!", id);
+    },
+    [
+      deleteRemoteSocketId,
+      remoteDataDispatch,
+      deleteRemoteStream,
+      remoteStreams,
+    ]
+  );
 
   useEffect(() => {
     peerService.peer.addEventListener("track", async (event) => {
       const remoteStreams = event.streams;
+      // point to be checked the =>> remoteStreams[0]
+      // console.log("incoming socket id saved as", incomingSocketId);
       remoteDataDispatch({
-        type: setRemoteStream,
-        payload: { value: remoteStreams[0] },
-      });
-      remoteDataDispatch({
-        type: setRemoteVideoEnabled,
-        payload: { value: true },
+        type: addRemoteStream,
+        payload: {
+          value: {
+            obj: remoteStreams[0],
+            socketid: incomingSocketId,
+            videoEnabled: true,
+            audioEnabled: false,
+          },
+        },
       });
     });
-  }, []);
+  }, [incomingSocketId, remoteStreams, addRemoteStream, remoteDataDispatch]);
 
   useEffect(() => {
     let newSocket = socket;
@@ -366,6 +439,18 @@ function App() {
     handleCallAccepted,
     handleCallUser,
     handleNegoNeedFinal,
+    handleNegoNeedIncoming,
+    handleAddCallerDetails,
+    handleUserLeft,
+    handleILeft,
+    handleMyJoining,
+    roomNotFound,
+    handleRemoteVideoStopped,
+    handleRemoteVideoRestarted,
+    handleRemoteAudioStopped,
+    handleRemoteAudioRestarted,
+    handleIncomingStreamRequest,
+    handleNegotiaitionNeeded,
   ]);
 
   const handleCreateRoom = useCallback(() => {
@@ -374,7 +459,7 @@ function App() {
 
     const roomId = generateRoomId(10);
     socket.emit("room:create", { name, room: roomId });
-  }, [socket]);
+  }, [socket, setlocalName, localDataDispatch]);
 
   const handleJoinRoom = useCallback(() => {
     const name = window.prompt("What shall we call you ?");
@@ -385,7 +470,7 @@ function App() {
   // handling video start stop
   const stopVideoStream = useCallback(
     (stream) => {
-      socket.emit("my:video:stopped", { to: remoteSocketId });
+      socket.emit("my:video:stopped", { room: room });
       const videoTracks = stream.getVideoTracks();
       videoTracks.forEach((track) => (track.enabled = false));
 
@@ -394,12 +479,12 @@ function App() {
         payload: { value: false },
       });
     },
-    [socket, remoteSocketId]
+    [socket, room, setlocalVideoEnabled, localDataDispatch]
   );
 
   const startVideoStream = useCallback(
     (stream) => {
-      socket.emit("my:video:restarted", { to: remoteSocketId });
+      socket.emit("my:video:restarted", { room: room });
       const videoTracks = stream.getVideoTracks();
       videoTracks.forEach((track) => (track.enabled = true));
       localDataDispatch({
@@ -407,13 +492,13 @@ function App() {
         payload: { value: true },
       });
     },
-    [socket, remoteSocketId]
+    [socket, room, setlocalVideoEnabled, localDataDispatch]
   );
 
   // handling audio start and stop
   const startAudioStream = useCallback(
     (stream) => {
-      socket.emit("my:audio:restarted", { to: remoteSocketId });
+      socket.emit("my:audio:restarted", { room: room });
       const audioTracks = stream.getAudioTracks();
       audioTracks.forEach((track) => (track.enabled = true));
 
@@ -422,12 +507,12 @@ function App() {
         payload: { value: true },
       });
     },
-    [socket, remoteSocketId]
+    [socket, room, setlocalAudioEnabled, localDataDispatch]
   );
 
   const stopAudioStream = useCallback(
     (stream) => {
-      socket.emit("my:audio:stopped", { to: remoteSocketId });
+      socket.emit("my:audio:stopped", { room: room });
       const audioTracks = stream.getAudioTracks();
       audioTracks.forEach((track) => (track.enabled = false));
 
@@ -436,11 +521,11 @@ function App() {
         payload: { value: false },
       });
     },
-    [socket, remoteSocketId]
+    [socket, room, setlocalAudioEnabled, localDataDispatch]
   );
 
   // handling manual disconnection by a user
-  const handleEndCall = async () => {
+  const handleEndCall = useCallback(async () => {
     remoteDataDispatch({
       type: setAllToDefault,
     });
@@ -448,21 +533,17 @@ function App() {
     // console.log("hey");
     socket.emit("room:leave", { roomId: room });
     gracefulCloseOfPeerConnection();
-  };
+  }, [remoteDataDispatch, socket, room, setAllToDefault]);
 
   return (
     <div className="w-screen ">
       <h1 className="mb-10">Welcome to UMeet</h1>
       <div className="m-auto w-9/12 flex flex-col">
         <VideoChat
-          remoteVideoEnabled={remoteVideoEnabled}
           localVideoEnabled={localVideoEnabled}
           localAudioEnabled={localAudioEnabled}
-          remoteAudioEnabled={remoteAudioEnabled}
           localStream={localStream}
-          remoteStream={remoteStream}
           name={localName}
-          remoteName={remoteName}
         />
         <br />
         <div className="py-5 uppercase">
@@ -474,38 +555,26 @@ function App() {
             <p className="text-red-500 ">Not connected to any room</p>
           )}
         </div>
-        <h2>
-          {remoteSocketId ? (
-            <>
-              Connected with:{" "}
-              <span className="bg-green-600 p-1 rounded-md ">
-                {remoteName || remoteSocketId}
-              </span>
-            </>
-          ) : (
-            ""
-          )}
-        </h2>
+
         <br />
         <div className="flex gap-3 items-center justify-center">
-          {!remoteSocketId && !room ? (
+          {remoteSocketIds.length === 0 && !room ? (
             <>
               <button onClick={() => handleJoinRoom()}>Join Room</button>
               <button onClick={() => handleCreateRoom()}>Create Room</button>
             </>
           ) : (
             <>
-              {!remoteStream ? (
-                <button onClick={() => handleEndCall()}>Leave Room</button>
-              ) : null}
+              {/* point to be checked  */}
+              <button onClick={() => handleEndCall()}>Leave Room</button>
             </>
           )}
         </div>
         <br />
         <div>
-          {remoteSocketId && !remoteStream && (
+          {incomingSocketId && remoteStreams.length === 0 && (
             <button
-              disabled={remoteStream && !iamthecaller}
+              disabled={remoteStreams.length !== 0 && !iamthecaller}
               onClick={handleCallUser}
             >
               Start Call
@@ -514,11 +583,11 @@ function App() {
         </div>
         <section className="m-2 p-5 bg-gray-700 rounded-md flex items-center justify-between">
           <div>
-            {remoteSocketId && localStream && (
+            {incomingSocketId && localStream && (
               <div className="flex gap-x-3">
                 <button
                   className={`${
-                    localVideoEnabled ? "bg-blue-500" : "bg-red-500"
+                    localVideoEnabled ? "bg-gray-900" : "bg-red-400"
                   } border-none outline-none`}
                   onClick={() =>
                     localVideoEnabled
@@ -530,7 +599,7 @@ function App() {
                 </button>
                 <button
                   className={`${
-                    localAudioEnabled ? "bg-blue-500" : "bg-red-500"
+                    localAudioEnabled ? "bg-gray-900" : "bg-red-400"
                   } border-none outline-none`}
                   onClick={() =>
                     localAudioEnabled
@@ -548,7 +617,7 @@ function App() {
             )}
           </div>
           <div>
-            {remoteSocketId && remoteStream && (
+            {incomingSocketId && remoteStreams && (
               <button className={"bg-red-500"} onClick={() => handleEndCall()}>
                 <MdCallEnd />
               </button>
