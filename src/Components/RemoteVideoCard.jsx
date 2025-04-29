@@ -2,9 +2,9 @@ import { useEffect, useRef } from "react";
 import { FaMicrophone, FaMicrophoneSlash } from "react-icons/fa";
 import { FaRegCircleUser } from "react-icons/fa6";
 
-function RemoteVideoCard({ remoteStream }) {
+function RemoteVideoCard({ remoteStream, name }) {
   const remoteVideoRef = useRef(null);
-  const { obj: streamObj, audioEnabled, videoEnabled, name } = remoteStream;
+  const { obj: streamObj, audioEnabled, videoEnabled, socketid } = remoteStream;
 
   useEffect(() => {
     if (remoteVideoRef.current && videoEnabled) {
@@ -13,7 +13,7 @@ function RemoteVideoCard({ remoteStream }) {
     }
   }, [streamObj, videoEnabled, remoteStream]);
   return (
-    <section className="p-10 w-full bg-gray-600 flex flex-col  gap-y-5">
+    <section className="relative flex flex-col w-full p-5 bg-slate-800 gap-y-5 rounded-md">
       <h2 className="text-lg uppercase">{name}</h2>
       {videoEnabled ? (
         <video
@@ -27,15 +27,17 @@ function RemoteVideoCard({ remoteStream }) {
           <FaRegCircleUser className="w-20 h-20 text-gray-800" />
         </div>
       )}
-      {audioEnabled ? (
-        <span className="bg-blue-500 rounded-full p-3 w-fit">
-          <FaMicrophone />
-        </span>
-      ) : (
-        <span className="bg-red-400 rounded-full p-3 w-fit">
-          <FaMicrophoneSlash />
-        </span>
-      )}
+      <div className="absolute w-10 h-10 rounded-full bg-red-400 flex items-center justify-center">
+        {audioEnabled ? (
+          <span className="bg-gray-500 rounded-full p-3 w-fit">
+            <FaMicrophone />
+          </span>
+        ) : (
+          <span className=" rounded-full p-3 w-fit">
+            <FaMicrophoneSlash />
+          </span>
+        )}
+      </div>
     </section>
   );
 }

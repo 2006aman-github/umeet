@@ -82,7 +82,11 @@ function App() {
       });
 
       // also make a peer for yourself
-      const connection = { peerObj: new peerService(), socketid: data.id };
+      const connection = {
+        peerObj: new peerService(),
+        socketid: data.id,
+        name: data.name,
+      };
       setConnObjs((connObj) => [...connObj, connection]);
       // remoteDataDispatch({
       //   type: setRemoteName,
@@ -126,7 +130,7 @@ function App() {
   const roomNotFound = useCallback(({ message }) => window.alert(message), []);
 
   const handleCallUser = useCallback(
-    async (id) => {
+    async (id, name) => {
       let connection = connObj.find((conn) => conn.socketid === id);
       // check if rtcpeerconnection is close
       if (connection?.peerObj?.peer?.signalingState === "closed") {
@@ -144,7 +148,7 @@ function App() {
       });
 
       if (!connection) {
-        connection = { peerObj: new peerService(), socketid: id };
+        connection = { peerObj: new peerService(), socketid: id, name: name };
         setConnObjs((connObj) => [...connObj, connection]);
       }
       const offer = await connection.peerObj.getOffer();
@@ -163,7 +167,7 @@ function App() {
       });
       // console.log("oops receiving id", id);
       setIncomingSocketId(id);
-      handleCallUser(id);
+      handleCallUser(id, name);
       // remoteDataDispatch({
       //   type: setRemoteName,
       //   payload: { value: name },
@@ -371,7 +375,7 @@ function App() {
         type: deleteRemoteStream,
         payload: { id: id },
       });
-      console.log(localStream, "my stream");
+      // console.log(localStream, "my stream");
       // localDataDispatch({
       //   type: setAllToDefault,
 
@@ -568,11 +572,14 @@ function App() {
   );
 
   return (
-    <div className="w-screen ">
-      <h1 className="mb-10">Welcome to UMeet</h1>
-      <div className="m-auto w-9/12 flex flex-col">
-        <VideoChat />
-        <br />
+    <div className=" flex w-screen overflow-x-hidden h-screen  flex-col items-center  bg-gray-950 text-white">
+      <h1 className="m-5 text-3xl lg:text-5xl">Welcome to UMeet</h1>
+      <p className="text-sm lg:text-lg">
+        ©️Developed and Maintained by Aman James
+      </p>
+      <div className="m-auto w-3/4 flex flex-col">
+        <VideoChat connObj={connObj} />
+
         <div className="py-5 uppercase">
           {room ? (
             <>
@@ -583,8 +590,7 @@ function App() {
           )}
         </div>
 
-        <br />
-        <div className="flex gap-3 items-center justify-center">
+        <div className="flex gap-3 items-center justify-center ">
           {remoteSocketIds.length === 0 && !room ? (
             <>
               <button onClick={() => handleJoinRoom()}>Join Room</button>
@@ -598,50 +604,54 @@ function App() {
           )}
         </div>
         <br />
-        <div></div>
-        <section className="m-2 p-5 bg-gray-700 rounded-md flex items-center justify-between">
+
+        <section
+          className={`fixed bottom-4 left-1/2 transform -translate-x-1/2 rounded-md text-white px-6 py-2 flex gap-x-3 items-center justify-between p-2  bg-gray-800 w-3/4 ${
+            localStream ? "" : "hidden"
+          }`}
+        >
           <div>
-            {incomingSocketId && localStream && (
-              <div className="flex gap-x-3">
-                <button
-                  className={`${
-                    localVideoEnabled ? "bg-gray-900" : "bg-red-400"
-                  } border-none outline-none`}
-                  onClick={() =>
-                    localVideoEnabled
-                      ? stopVideoStream(localStream)
-                      : startVideoStream(localStream)
-                  }
-                >
-                  {localVideoEnabled ? <FaVideo /> : <FaVideoSlash />}
-                </button>
-                <button
-                  className={`${
-                    localAudioEnabled ? "bg-gray-900" : "bg-red-400"
-                  } border-none outline-none`}
-                  onClick={() =>
-                    localAudioEnabled
-                      ? stopAudioStream(localStream)
-                      : startAudioStream(localStream)
-                  }
-                >
-                  {localAudioEnabled ? (
-                    <FaMicrophoneAlt />
-                  ) : (
-                    <FaMicrophoneAltSlash />
-                  )}
-                </button>
-              </div>
-            )}
+            <div className="flex gap-x-3">
+              <button
+                className={`${
+                  localVideoEnabled ? "bg-gray-900" : "bg-red-400 text-black"
+                } border-none outline-none text-white`}
+                onClick={() =>
+                  localVideoEnabled
+                    ? stopVideoStream(localStream)
+                    : startVideoStream(localStream)
+                }
+              >
+                {localVideoEnabled ? <FaVideo /> : <FaVideoSlash />}
+              </button>
+              <button
+                className={`${
+                  localAudioEnabled ? "bg-gray-900" : "bg-red-400 text-black"
+                } border-none outline-none text-white`}
+                onClick={() =>
+                  localAudioEnabled
+                    ? stopAudioStream(localStream)
+                    : startAudioStream(localStream)
+                }
+              >
+                {localAudioEnabled ? (
+                  <FaMicrophoneAlt />
+                ) : (
+                  <FaMicrophoneAltSlash />
+                )}
+              </button>
+            </div>
           </div>
           <div>
-            {incomingSocketId && remoteStreams && (
-              <button className={"bg-red-500"} onClick={() => handleEndCall()}>
-                <MdCallEnd />
-              </button>
-            )}
+            <button
+              className={"bg-red-600 text-white"}
+              onClick={() => handleEndCall()}
+            >
+              <MdCallEnd />
+            </button>
           </div>
         </section>
+        <br />
       </div>
     </div>
   );

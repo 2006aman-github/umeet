@@ -12,13 +12,13 @@ import { RemoteContext } from "./Context/RemoteContext";
 import { use } from "react";
 import { LocalContext } from "./Context/LocalContext";
 
-function VideoChat() {
+function VideoChat({ connObj }) {
   const {
     remoteData: { remoteStreams, remoteSocketIds },
     remoteDataDispatch,
   } = useContext(RemoteContext);
   const {
-    localData: { localStream, localVideoEnabled, localAudioEnabled, name },
+    localData: { localStream, localVideoEnabled, localAudioEnabled, localName },
     localDataDispatch,
   } = useContext(LocalContext);
   const localVideoRef = useRef(null);
@@ -44,9 +44,9 @@ function VideoChat() {
     }
   }, [localStream, localVideoEnabled]);
   return (
-    <div className="grid grid-cols-2 justify-center  overflow-scroll max-h-full">
-      <section className="flex flex-col w-full p-10 bg-black gap-y-5">
-        <h2 className="text-lg uppercase">local stream</h2>
+    <div className="grid grid-cols-1 lg:grid-cols-2 justify-center gap-2  overflow-auto max-h-1/2 p-2 bg-gray-600 rounded-md">
+      <section className="flex flex-col w-full p-5 bg-slate-900 gap-y-5 rounded-md">
+        <h2 className="text-lg uppercase">{localName || "Local Stream"}</h2>
         {localVideoEnabled ? (
           <video
             muted
@@ -62,7 +62,13 @@ function VideoChat() {
         <span>{name}</span>
       </section>
       {remoteStreams.map((stream, index) => {
-        return <RemoteVideoCard remoteStream={stream} key={index} />;
+        // get name from connObj using stream.socketid
+        const name = connObj?.find(
+          (conn) => conn.socketid === stream.socketid
+        ).name;
+        return (
+          <RemoteVideoCard remoteStream={stream} name={name} key={index} />
+        );
       })}
     </div>
   );
