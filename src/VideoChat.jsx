@@ -56,7 +56,11 @@ function VideoChat({ connObj }) {
           ></video>
         ) : (
           <div className="w-full h-52 flex items-center justify-center bg-gray-800 rounded-md">
-            <FaRegCircleUser className="w-20 h-20 text-gray-500" />
+            <div className="w-20 h-20 rounded-full bg-gray-700 text-white flex items-center justify-center font-bold text-lg">
+              {localName?.charAt(0)?.toUpperCase() || (
+                <FaRegCircleUser className="w-20 h-20 text-gray-500" />
+              )}
+            </div>
           </div>
         )}
         <span>{name}</span>
