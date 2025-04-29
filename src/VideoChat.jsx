@@ -48,6 +48,15 @@ function VideoChat({ connObj }) {
       className="grid grid-cols-1 lg:grid-cols-2 justify-center gap-2  
     overflow-auto max-h-1/2 p-2 bg-black rounded-md"
     >
+      {remoteStreams.map((stream, index) => {
+        // get name from connObj using stream.socketid
+        const name = connObj?.find(
+          (conn) => conn.socketid === stream.socketid
+        ).name;
+        return (
+          <RemoteVideoCard remoteStream={stream} name={name} key={index} />
+        );
+      })}
       <section className="flex flex-col w-full p-5 bg-slate-900 gap-y-5 rounded-md">
         <h2 className="text-lg uppercase">{localName || "Local Stream"}</h2>
         {localVideoEnabled ? (
@@ -68,15 +77,6 @@ function VideoChat({ connObj }) {
         )}
         <span>{name}</span>
       </section>
-      {remoteStreams.map((stream, index) => {
-        // get name from connObj using stream.socketid
-        const name = connObj?.find(
-          (conn) => conn.socketid === stream.socketid
-        ).name;
-        return (
-          <RemoteVideoCard remoteStream={stream} name={name} key={index} />
-        );
-      })}
     </div>
   );
 }
