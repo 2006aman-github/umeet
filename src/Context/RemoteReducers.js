@@ -27,7 +27,7 @@ export const remoteDataReducers = (state, action) => {
       };
     }
     case remoteReducerActions.addRemoteSocketId:
-      console.log("add remote socket id", action.payload.id);
+      // console.log("add remote socket id", action.payload.id);
       return {
         ...state,
         remoteSocketIds: [...state.remoteSocketIds, action.payload.id],
@@ -37,10 +37,10 @@ export const remoteDataReducers = (state, action) => {
       let index = localState.remoteSocketIds.findIndex(
         (socketId) => socketId === action.payload.id
       );
-      console.log(
-        "im called to delete remote socket id",
-        localState.remoteSocketIds
-      );
+      // console.log(
+      //   "im called to delete remote socket id",
+      //   localState.remoteSocketIds
+      // );
       if (index !== -1) {
         localState.remoteSocketIds.splice(index, 1);
       } else {
@@ -61,7 +61,7 @@ export const remoteDataReducers = (state, action) => {
             (stream) => stream.socketid === action.payload.value.socketid
           )
         ) {
-          console.log("Stream already exists in remote streams");
+          // console.log("Stream already exists in remote streams");
           return state; // No changes made to state
         }
       }
@@ -69,14 +69,17 @@ export const remoteDataReducers = (state, action) => {
         ...state,
         remoteStreams: [...state.remoteStreams, action.payload.value],
       };
-    case remoteReducerActions.deleteRemoteStream:
+    case remoteReducerActions.deleteRemoteStream: {
       // expecting value containing stream obj
-      return {
+      let updatedState = {
         ...state,
         remoteStreams: state.remoteStreams.filter(
-          (stream) => stream.obj.id !== action.payload.value.id
+          (stream) => stream.socketid !== action.payload.id
         ),
       };
+      // console.log("updated state", action.payload.id);
+      return updatedState;
+    }
 
     // video audio states
     case remoteReducerActions.setRemoteVideoEnabled: {

@@ -1,7 +1,7 @@
 import { useCallback, useContext, useEffect, useState } from "react";
 import "./App.css";
 import VideoChat from "./VideoChat";
-import { io } from "socket.io-client";
+import { connect, io } from "socket.io-client";
 import peerService from "./service/peerService";
 import { generateRoomId } from "./service/roomDetails";
 import { RemoteContext } from "./Context/RemoteContext";
@@ -15,15 +15,19 @@ import {
   FaVideoSlash,
 } from "react-icons/fa";
 import { MdCallEnd } from "react-icons/md";
+import { gracefulCloseOfPeerConnection } from "./utils/closePeerConnection";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL;
 
 function App() {
   const [socket, setSocket] = useState(null);
-
   const [room, setRoom] = useState(null);
-  const [iamthecaller, setIamthecaller] = useState(false);
   const [incomingSocketId, setIncomingSocketId] = useState(null);
+  const [connObj, setConnObjs] = useState([]);
+  // connObjo = {
+  //   peerObj,
+  //   socketid: null,
+  // }
 
   // remotedata context access
   const {
@@ -60,7 +64,9 @@ function App() {
     setlocalVideoEnabled,
     setlocalStream,
   } = localReducerActions;
+  // console.log(remoteStreams);
 
+  // >>> only called by existing members of the room
   const handleUserJoined = useCallback(
     (data) => {
       // console.log("new user joined :", data.name, " with id ", data.id);
@@ -74,6 +80,10 @@ function App() {
         to: data.id,
         name: localName, //this is my localName (local)
       });
+
+      // also make a peer for yourself
+      const connection = { peerObj: new peerService(), socketid: data.id };
+      setConnObjs((connObj) => [...connObj, connection]);
       // remoteDataDispatch({
       //   type: setRemoteName,
       //   payload: { value: data.name },
@@ -82,10 +92,25 @@ function App() {
     [socket, localName, remoteDataDispatch, addRemoteSocketId]
     // add localname as dependency took 40 mins  to debug
   );
+
+  // >>> every user calls this function when they join the room
   const handleMyJoining = useCallback(
-    ({ room, name, otherSockets }) => {
-      // othersockets are being sent but of no use
+    async ({ room, name, otherSockets }) => {
       // console.log("i joined yoo", otherSockets);
+
+      // if im the only one in the room just start my video stream
+      if (otherSockets.length === 0) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: true,
+        });
+        localDataDispatch({ type: setlocalStream, payload: { value: stream } });
+        localDataDispatch({
+          type: setlocalVideoEnabled,
+          payload: { value: true },
+        });
+      }
+
       setRoom(room);
       // if (otherSockets.length !== 0) {
       //   remoteDataDispatch({
@@ -95,14 +120,40 @@ function App() {
       // }
       localDataDispatch({ type: setlocalName, payload: { value: name } });
     },
-    [setlocalName, localDataDispatch]
+    [setlocalName, localDataDispatch, setlocalStream, setlocalVideoEnabled]
   );
 
-  const handleILeft = useCallback(() => {
-    setRoom(null);
-  }, []);
-
   const roomNotFound = useCallback(({ message }) => window.alert(message), []);
+
+  const handleCallUser = useCallback(
+    async (id) => {
+      let connection = connObj.find((conn) => conn.socketid === id);
+      // check if rtcpeerconnection is close
+      if (connection?.peerObj?.peer?.signalingState === "closed") {
+        // console.log("reinitiating connection");
+        await connection.peerObj.restartConnection();
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: true,
+        video: true,
+      });
+      localDataDispatch({ type: setlocalStream, payload: { value: stream } });
+      localDataDispatch({
+        type: setlocalVideoEnabled,
+        payload: { value: true, id: stream.id },
+      });
+
+      if (!connection) {
+        connection = { peerObj: new peerService(), socketid: id };
+        setConnObjs((connObj) => [...connObj, connection]);
+      }
+      const offer = await connection.peerObj.getOffer();
+      // console.log(`Making Call!!!! ====> mystream`, stream);
+
+      socket.emit("user:call", { to: id, offer });
+    },
+    [socket, setlocalStream, setlocalVideoEnabled, localDataDispatch, connObj]
+  );
 
   const handleAddCallerDetails = useCallback(
     ({ id, name }) => {
@@ -110,128 +161,117 @@ function App() {
         type: addRemoteSocketId,
         payload: { id: id },
       });
-
+      // console.log("oops receiving id", id);
       setIncomingSocketId(id);
+      handleCallUser(id);
       // remoteDataDispatch({
       //   type: setRemoteName,
       //   payload: { value: name },
       // });
     },
-    [addRemoteSocketId, remoteDataDispatch]
+    [addRemoteSocketId, remoteDataDispatch, handleCallUser]
   );
-
-  const handleCallUser = useCallback(async () => {
-    setIamthecaller(true);
-    // console.log("signalling state => ", peerService.peer.signalingState);
-    // await localStream?.getTracks().forEach((track) => track.stop());
-    // check if rtcpeerconnection is close
-    if (peerService.peer.signalingState === "closed") {
-      // console.log("reinitiating connection");
-      peerService.peer.signalingState;
-      await peerService.restartConnection();
-      // console.log("restarted connection", peerService.peer.connectionState);
-    }
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
-      video: true,
-    });
-
-    // make a call to all people inside room
-
-    const offer = await peerService.getOffer();
-    // console.log(`Making Call!!!! ====> mystream`, stream);
-
-    localDataDispatch({
-      type: setlocalVideoEnabled,
-      payload: { value: true, id: stream.id },
-    });
-
-    socket.emit("user:call", { to: incomingSocketId, offer });
-
-    localDataDispatch({ type: setlocalStream, payload: { value: stream } });
-  }, [
-    incomingSocketId,
-    socket,
-    setlocalStream,
-    setlocalVideoEnabled,
-    localDataDispatch,
-  ]);
 
   // run  by client 2
   const handleIncomingCall = useCallback(
     async ({ from, offer }) => {
       // check if rtcpeerconnection is close
-      // console.log("signalling state", peerService.peer.signalingState);
 
-      if (peerService.peer.signalingState === "closed") {
+      const connection = connObj.find(
+        (connection) => connection.socketid === from
+      );
+      if (connection?.peerObj?.peer?.signalingState === "closed") {
         // console.log("reinitiating connection");
-        await peerService.restartConnection();
-        // console.log("restarted connection", peerService.peer.connectionState);
+        await connection.peerObj.restartConnection();
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: true,
-      });
-
-      localDataDispatch({ type: setlocalStream, payload: { value: stream } });
-
-      localDataDispatch({
-        type: setlocalVideoEnabled,
-        payload: { value: true },
-      });
 
       // console.log(`Incoming Call ====> mystream`, stream);
-      const ans = await peerService.getAnswer(offer);
+      const ans = await connection?.peerObj?.getAnswer(offer);
+      // console.log("getting offer", connObj);
       socket.emit("call:accepted", { to: from, ans });
     },
-    [socket, setlocalStream, setlocalVideoEnabled, localDataDispatch]
+    [socket, connObj]
   );
 
-  const sendStreams = useCallback((stream) => {
-    for (const track of stream.getTracks()) {
-      // console.log("sending your streams", track);
-      peerService.peer.addTrack(track, stream);
-    }
-  }, []);
+  const sendStreams = useCallback(
+    (stream, to) => {
+      for (const track of stream.getTracks()) {
+        // console.log("sending your streams", track);
+        const connection = connObj.find(
+          (connection) => connection.socketid === to
+        );
+        const existing = connection?.peerObj?.peer
+          .getSenders()
+          .some((sender) => sender.track === track);
+        if (!existing) {
+          connection?.peerObj?.peer.addTrack(track, stream);
+        }
+      }
+    },
+    [connObj]
+  );
 
   const handleCallAccepted = useCallback(
-    ({ ans }) => {
-      peerService.setLocalDescription(ans);
-      // console.log("call accepted");
-      sendStreams(localStream);
+    async ({ ans, from }) => {
+      const connection = connObj.find(
+        (connection) => connection.socketid === from
+      );
+
+      await connection?.peerObj?.setIncomingDescription(ans);
+      console.log("call accepted");
+      // send to where it came from
+      sendStreams(localStream, from);
     },
-    [sendStreams, localStream]
+    [sendStreams, localStream, connObj]
   );
 
   // "peer:nego:needed"
   const handleNegoNeedIncoming = useCallback(
     async ({ from, offer }) => {
-      const ans = await peerService.getAnswer(offer);
+      const connection = connObj.find(
+        (connection) => connection.socketid === from
+      );
+      console.log("nego incoming");
+      const ans = await connection?.peerObj?.getAnswer(offer);
       socket.emit("peer:nego:done", { to: from, ans });
     },
-    [socket]
+    [socket, connObj]
   );
 
   // here important change is to be made
-  const handleNegotiaitionNeeded = useCallback(async () => {
-    const offer = await peerService.getOffer();
-    // console.log("im getting called");
-    socket.emit("peer:nego:needed", { offer, to: incomingSocketId });
-  }, [socket, incomingSocketId]);
+  const handleNegotiaitionNeeded = useCallback(
+    async (id) => {
+      const connection = connObj.find(
+        (connection) => connection.socketid === id
+      );
+
+      const offer = await connection?.peerObj?.getOffer();
+      console.log("i need nego");
+      socket.emit("peer:nego:needed", { offer, to: id });
+    },
+    [socket, connObj]
+  );
 
   // handling peer:nego:final
   const handleNegoNeedFinal = useCallback(
     async ({ ans, from }) => {
-      await peerService.setLocalDescription(ans);
-      if (iamthecaller) {
-        socket.emit("ask:for:stream", { to: from });
-      }
+      const connection = connObj.find(
+        (connection) => connection.socketid === from
+      );
+      console.log("nego final done");
+      await connection?.peerObj?.setIncomingDescription(ans);
+
+      socket.emit("ask:for:stream", { to: from });
     },
-    [socket, iamthecaller]
+    [socket, connObj]
   );
-  const handleIncomingStreamRequest = useCallback(() => {
-    sendStreams(localStream);
-  }, [localStream, sendStreams]);
+  const handleIncomingStreamRequest = useCallback(
+    ({ from }) => {
+      sendStreams(localStream, from);
+      console.log("sending stream to", from);
+    },
+    [localStream, sendStreams]
+  );
 
   // remote video event handlers
 
@@ -274,7 +314,7 @@ function App() {
       if (index !== -1) {
         remoteDataDispatch({
           type: setRemoteAudioEnabled,
-          payload: { value: false, id: remoteStreams[index].scoketid },
+          payload: { value: false, id: remoteStreams[index].socketid },
         });
       }
     },
@@ -295,44 +335,27 @@ function App() {
     [remoteDataDispatch, remoteStreams, setRemoteAudioEnabled]
   );
 
-  const gracefulCloseOfPeerConnection = async () => {
-    let peer = peerService.peer;
-    if (!peer) return;
-    // Close each track
-    peer?.getTracks().forEach((track) => {
-      track.stop();
-    });
-
-    // Remove all event listeners
-    peer.ontrack = null;
-    peer.onremovetrack = null;
-    peer.onicecandidate = null;
-    peer.oniceconnectionstatechange = null;
-    peer.onsignalingstatechange = null;
-
-    // Close the connection
-    peer?.close();
-
-    peer = null;
-  };
-
   // handle error message from socket server
   const handleErrorMessage = ({ message }) => {
     window.alert(message);
   };
 
   useEffect(() => {
-    peerService.peer.addEventListener(
-      "negotiationneeded",
-      handleNegotiaitionNeeded
-    );
-    return () => {
-      peerService.peer.removeEventListener(
-        "negotiationneeded",
-        handleNegotiaitionNeeded
+    // console.log("connObj list is", connObj);
+    connObj.map((connection) => {
+      connection?.peerObj?.peer?.addEventListener("negotiationneeded", () =>
+        handleNegotiaitionNeeded(connection.socketid)
       );
+    });
+    return () => {
+      connObj.map((connection) => {
+        connection?.peerObj?.peer?.removeEventListener(
+          "negotiationneeded",
+          () => handleNegotiaitionNeeded(connection.socketid)
+        );
+      });
     };
-  }, [handleNegotiaitionNeeded, socket]);
+  }, [handleNegotiaitionNeeded, socket, connObj]);
 
   // changes at signalling server
   // handling heartbreak
@@ -343,44 +366,64 @@ function App() {
         type: deleteRemoteSocketId,
         payload: { id: id },
       });
-      const index = remoteStreams.findIndex((stream) => stream.socketid === id);
-      if (index !== -1) {
-        remoteDataDispatch({
-          type: deleteRemoteStream,
-          payload: { value: remoteStreams[index].obj },
-        });
-      }
+
+      remoteDataDispatch({
+        type: deleteRemoteStream,
+        payload: { id: id },
+      });
+      console.log(localStream, "my stream");
+      // localDataDispatch({
+      //   type: setAllToDefault,
+
+      // })
 
       // socket.emit("room:leave", { roomId: room });
-      gracefulCloseOfPeerConnection();
+      const connection = connObj.find((conn) => conn.socketid === id);
+
+      gracefulCloseOfPeerConnection(connection.peerObj.peer);
       // console.log("your mate left!!!!", id);
     },
-    [
-      deleteRemoteSocketId,
-      remoteDataDispatch,
-      deleteRemoteStream,
-      remoteStreams,
-    ]
+    [deleteRemoteSocketId, remoteDataDispatch, deleteRemoteStream, connObj]
   );
 
   useEffect(() => {
-    peerService.peer.addEventListener("track", async (event) => {
-      const remoteStreams = event.streams;
-      // point to be checked the =>> remoteStreams[0]
-      // console.log("incoming socket id saved as", incomingSocketId);
-      remoteDataDispatch({
-        type: addRemoteStream,
-        payload: {
-          value: {
-            obj: remoteStreams[0],
-            socketid: incomingSocketId,
-            videoEnabled: true,
-            audioEnabled: false,
+    connObj.map((connection) => {
+      connection?.peerObj?.peer.addEventListener("track", async (event) => {
+        const remoteStreams = event.streams;
+        // point to be checked the =>> remoteStreams[0]
+
+        remoteDataDispatch({
+          type: addRemoteStream,
+          payload: {
+            value: {
+              obj: remoteStreams[0],
+              socketid: connection.socketid,
+              videoEnabled: true,
+              audioEnabled: false,
+            },
           },
-        },
+        });
       });
     });
-  }, [incomingSocketId, remoteStreams, addRemoteStream, remoteDataDispatch]);
+  }, [remoteStreams, addRemoteStream, remoteDataDispatch, connObj]);
+
+  // handling manual disconnection by a user
+  const handleEndCall = useCallback(async () => {
+    remoteDataDispatch({
+      type: setAllToDefault,
+    });
+
+    // console.log("hey");
+    socket.emit("room:leave", { roomId: room });
+    connObj.map(({ peerObj }) => {
+      gracefulCloseOfPeerConnection(peerObj.peer);
+    });
+  }, [remoteDataDispatch, socket, room, setAllToDefault, connObj]);
+
+  // room:left event handler
+  const handleILeft = useCallback(() => {
+    setRoom(null);
+  }, []);
 
   useEffect(() => {
     let newSocket = socket;
@@ -524,27 +567,11 @@ function App() {
     [socket, room, setlocalAudioEnabled, localDataDispatch]
   );
 
-  // handling manual disconnection by a user
-  const handleEndCall = useCallback(async () => {
-    remoteDataDispatch({
-      type: setAllToDefault,
-    });
-
-    // console.log("hey");
-    socket.emit("room:leave", { roomId: room });
-    gracefulCloseOfPeerConnection();
-  }, [remoteDataDispatch, socket, room, setAllToDefault]);
-
   return (
     <div className="w-screen ">
       <h1 className="mb-10">Welcome to UMeet</h1>
       <div className="m-auto w-9/12 flex flex-col">
-        <VideoChat
-          localVideoEnabled={localVideoEnabled}
-          localAudioEnabled={localAudioEnabled}
-          localStream={localStream}
-          name={localName}
-        />
+        <VideoChat />
         <br />
         <div className="py-5 uppercase">
           {room ? (
@@ -571,16 +598,7 @@ function App() {
           )}
         </div>
         <br />
-        <div>
-          {incomingSocketId && remoteStreams.length === 0 && (
-            <button
-              disabled={remoteStreams.length !== 0 && !iamthecaller}
-              onClick={handleCallUser}
-            >
-              Start Call
-            </button>
-          )}
-        </div>
+        <div></div>
         <section className="m-2 p-5 bg-gray-700 rounded-md flex items-center justify-between">
           <div>
             {incomingSocketId && localStream && (

@@ -9,17 +9,18 @@ import { FaMicrophone, FaMicrophoneSlash } from "react-icons/fa";
 import { FaRegCircleUser } from "react-icons/fa6";
 import RemoteVideoCard from "./Components/RemoteVideoCard";
 import { RemoteContext } from "./Context/RemoteContext";
+import { use } from "react";
+import { LocalContext } from "./Context/LocalContext";
 
-function VideoChat({
-  localStream,
-  localVideoEnabled,
-  localAudioEnabled,
-  name,
-}) {
+function VideoChat() {
   const {
     remoteData: { remoteStreams, remoteSocketIds },
     remoteDataDispatch,
   } = useContext(RemoteContext);
+  const {
+    localData: { localStream, localVideoEnabled, localAudioEnabled, name },
+    localDataDispatch,
+  } = useContext(LocalContext);
   const localVideoRef = useRef(null);
   // console.log(remoteSocketIds, "remote ids!!!");
   // useEffect(() => {
@@ -61,7 +62,6 @@ function VideoChat({
         <span>{name}</span>
       </section>
       {remoteStreams.map((stream, index) => {
-        console.log("i rendered");
         return <RemoteVideoCard remoteStream={stream} key={index} />;
       })}
     </div>
