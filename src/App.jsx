@@ -14,8 +14,10 @@ import {
   FaVideo,
   FaVideoSlash,
 } from "react-icons/fa";
-import { MdCallEnd } from "react-icons/md";
+import { MdCallEnd, MdPeopleAlt } from "react-icons/md";
 import { gracefulCloseOfPeerConnection } from "./utils/closePeerConnection";
+import Clock from "./Components/CurrentTime";
+import Snackbar from "./Components/Snackbar";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL;
 
@@ -24,6 +26,7 @@ function App() {
   const [room, setRoom] = useState(null);
   const [incomingSocketId, setIncomingSocketId] = useState(null);
   const [connObj, setConnObjs] = useState([]);
+  const [show, setShow] = useState(null);
   // connObjo = {
   //   peerObj,
   //   socketid: null,
@@ -73,7 +76,9 @@ function App() {
       // console.log(`socket ${data.id} joined room`);
       remoteDataDispatch({
         type: addRemoteSocketId,
-        payload: { id: data.id },
+        payload: {
+          id: data.id,
+        },
       });
       setIncomingSocketId(data.id);
       socket.emit("caller:join:complete", {
@@ -108,10 +113,21 @@ function App() {
           audio: true,
           video: true,
         });
-        localDataDispatch({ type: setlocalStream, payload: { value: stream } });
+        stream.getAudioTracks().forEach((track) => {
+          track.enabled = false;
+        });
+
+        localDataDispatch({
+          type: setlocalStream,
+          payload: {
+            value: stream,
+          },
+        });
         localDataDispatch({
           type: setlocalVideoEnabled,
-          payload: { value: true },
+          payload: {
+            value: true,
+          },
         });
       }
 
@@ -122,7 +138,12 @@ function App() {
       //     payload: { ids: otherSockets },
       //   });
       // }
-      localDataDispatch({ type: setlocalName, payload: { value: name } });
+      localDataDispatch({
+        type: setlocalName,
+        payload: {
+          value: name,
+        },
+      });
     },
     [setlocalName, localDataDispatch, setlocalStream, setlocalVideoEnabled]
   );
@@ -141,20 +162,38 @@ function App() {
         audio: true,
         video: true,
       });
-      localDataDispatch({ type: setlocalStream, payload: { value: stream } });
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = false;
+      });
+      localDataDispatch({
+        type: setlocalStream,
+        payload: {
+          value: stream,
+        },
+      });
       localDataDispatch({
         type: setlocalVideoEnabled,
-        payload: { value: true, id: stream.id },
+        payload: {
+          value: true,
+          id: stream.id,
+        },
       });
 
       if (!connection) {
-        connection = { peerObj: new peerService(), socketid: id, name: name };
+        connection = {
+          peerObj: new peerService(),
+          socketid: id,
+          name: name,
+        };
         setConnObjs((connObj) => [...connObj, connection]);
       }
       const offer = await connection.peerObj.getOffer();
       // console.log(`Making Call!!!! ====> mystream`, stream);
 
-      socket.emit("user:call", { to: id, offer });
+      socket.emit("user:call", {
+        to: id,
+        offer,
+      });
     },
     [socket, setlocalStream, setlocalVideoEnabled, localDataDispatch, connObj]
   );
@@ -163,7 +202,9 @@ function App() {
     ({ id, name }) => {
       remoteDataDispatch({
         type: addRemoteSocketId,
-        payload: { id: id },
+        payload: {
+          id: id,
+        },
       });
       // console.log("oops receiving id", id);
       setIncomingSocketId(id);
@@ -192,7 +233,10 @@ function App() {
       // console.log(`Incoming Call ====> mystream`, stream);
       const ans = await connection?.peerObj?.getAnswer(offer);
       // console.log("getting offer", connObj);
-      socket.emit("call:accepted", { to: from, ans });
+      socket.emit("call:accepted", {
+        to: from,
+        ans,
+      });
     },
     [socket, connObj]
   );
@@ -204,6 +248,7 @@ function App() {
         const connection = connObj.find(
           (connection) => connection.socketid === to
         );
+
         const existing = connection?.peerObj?.peer
           .getSenders()
           .some((sender) => sender.track === track);
@@ -237,7 +282,10 @@ function App() {
       );
       console.log("nego incoming");
       const ans = await connection?.peerObj?.getAnswer(offer);
-      socket.emit("peer:nego:done", { to: from, ans });
+      socket.emit("peer:nego:done", {
+        to: from,
+        ans,
+      });
     },
     [socket, connObj]
   );
@@ -251,7 +299,10 @@ function App() {
 
       const offer = await connection?.peerObj?.getOffer();
       console.log("i need nego");
-      socket.emit("peer:nego:needed", { offer, to: id });
+      socket.emit("peer:nego:needed", {
+        offer,
+        to: id,
+      });
     },
     [socket, connObj]
   );
@@ -265,7 +316,9 @@ function App() {
       console.log("nego final done");
       await connection?.peerObj?.setIncomingDescription(ans);
 
-      socket.emit("ask:for:stream", { to: from });
+      socket.emit("ask:for:stream", {
+        to: from,
+      });
     },
     [socket, connObj]
   );
@@ -286,7 +339,10 @@ function App() {
       if (index !== -1) {
         remoteDataDispatch({
           type: setRemoteVideoEnabled,
-          payload: { value: false, id: remoteStreams[index].socketid },
+          payload: {
+            value: false,
+            id: remoteStreams[index].socketid,
+          },
         });
       }
       // console.log("remote stream", remoteStreams);
@@ -302,7 +358,10 @@ function App() {
       if (index !== -1) {
         remoteDataDispatch({
           type: setRemoteVideoEnabled,
-          payload: { value: true, id: remoteStreams[index].socketid },
+          payload: {
+            value: true,
+            id: remoteStreams[index].socketid,
+          },
         });
       }
     },
@@ -318,7 +377,10 @@ function App() {
       if (index !== -1) {
         remoteDataDispatch({
           type: setRemoteAudioEnabled,
-          payload: { value: false, id: remoteStreams[index].socketid },
+          payload: {
+            value: false,
+            id: remoteStreams[index].socketid,
+          },
         });
       }
     },
@@ -332,7 +394,10 @@ function App() {
       if (index !== -1) {
         remoteDataDispatch({
           type: setRemoteAudioEnabled,
-          payload: { value: true, id: remoteStreams[index].socketid },
+          payload: {
+            value: true,
+            id: remoteStreams[index].socketid,
+          },
         });
       }
     },
@@ -351,6 +416,11 @@ function App() {
         handleNegotiaitionNeeded(connection.socketid)
       );
     });
+    window.addEventListener("beforeunload", () => {
+      if (room) {
+        socket.emit("room:leave", { roomId: room }); // optional custom cleanup
+      }
+    });
     return () => {
       connObj.map((connection) => {
         connection?.peerObj?.peer?.removeEventListener(
@@ -358,8 +428,13 @@ function App() {
           () => handleNegotiaitionNeeded(connection.socketid)
         );
       });
+      window.removeEventListener("beforeunload", () => {
+        if (room) {
+          socket.emit("room:leave", { roomId: room }); // optional custom cleanup
+        }
+      });
     };
-  }, [handleNegotiaitionNeeded, socket, connObj]);
+  }, [handleNegotiaitionNeeded, socket, connObj, room]);
 
   // changes at signalling server
   // handling heartbreak
@@ -368,12 +443,21 @@ function App() {
       // get the stream using this socket id from param
       remoteDataDispatch({
         type: deleteRemoteSocketId,
-        payload: { id: id },
+        payload: {
+          id: id,
+        },
       });
+      setShow(
+        `${
+          connObj.find((conn) => conn.socketid === id)?.name || "someone"
+        } left`
+      );
 
       remoteDataDispatch({
         type: deleteRemoteStream,
-        payload: { id: id },
+        payload: {
+          id: id,
+        },
       });
       // console.log(localStream, "my stream");
       // localDataDispatch({
@@ -418,7 +502,9 @@ function App() {
     });
 
     // console.log("hey");
-    socket.emit("room:leave", { roomId: room });
+    socket.emit("room:leave", {
+      roomId: room,
+    });
     connObj.map(({ peerObj }) => {
       gracefulCloseOfPeerConnection(peerObj.peer);
     });
@@ -502,28 +588,43 @@ function App() {
 
   const handleCreateRoom = useCallback(() => {
     const name = window.prompt("What shall we call you ?");
-    localDataDispatch({ type: setlocalName, payload: { value: name } });
+    localDataDispatch({
+      type: setlocalName,
+      payload: {
+        value: name,
+      },
+    });
 
     const roomId = generateRoomId(10);
-    socket.emit("room:create", { name, room: roomId });
+    socket.emit("room:create", {
+      name,
+      room: roomId,
+    });
   }, [socket, setlocalName, localDataDispatch]);
 
   const handleJoinRoom = useCallback(() => {
     const name = window.prompt("What shall we call you ?");
     const roomId = window.prompt("Enter the room ID to join.");
-    socket.emit("room:join", { name, room: roomId });
+    socket.emit("room:join", {
+      name,
+      room: roomId,
+    });
   }, [socket]);
 
   // handling video start stop
   const stopVideoStream = useCallback(
     (stream) => {
-      socket.emit("my:video:stopped", { room: room });
+      socket.emit("my:video:stopped", {
+        room: room,
+      });
       const videoTracks = stream.getVideoTracks();
       videoTracks.forEach((track) => (track.enabled = false));
 
       localDataDispatch({
         type: setlocalVideoEnabled,
-        payload: { value: false },
+        payload: {
+          value: false,
+        },
       });
     },
     [socket, room, setlocalVideoEnabled, localDataDispatch]
@@ -531,12 +632,16 @@ function App() {
 
   const startVideoStream = useCallback(
     (stream) => {
-      socket.emit("my:video:restarted", { room: room });
+      socket.emit("my:video:restarted", {
+        room: room,
+      });
       const videoTracks = stream.getVideoTracks();
       videoTracks.forEach((track) => (track.enabled = true));
       localDataDispatch({
         type: setlocalVideoEnabled,
-        payload: { value: true },
+        payload: {
+          value: true,
+        },
       });
     },
     [socket, room, setlocalVideoEnabled, localDataDispatch]
@@ -545,13 +650,17 @@ function App() {
   // handling audio start and stop
   const startAudioStream = useCallback(
     (stream) => {
-      socket.emit("my:audio:restarted", { room: room });
+      socket.emit("my:audio:restarted", {
+        room: room,
+      });
       const audioTracks = stream.getAudioTracks();
       audioTracks.forEach((track) => (track.enabled = true));
 
       localDataDispatch({
         type: setlocalAudioEnabled,
-        payload: { value: true },
+        payload: {
+          value: true,
+        },
       });
     },
     [socket, room, setlocalAudioEnabled, localDataDispatch]
@@ -559,13 +668,17 @@ function App() {
 
   const stopAudioStream = useCallback(
     (stream) => {
-      socket.emit("my:audio:stopped", { room: room });
+      socket.emit("my:audio:stopped", {
+        room: room,
+      });
       const audioTracks = stream.getAudioTracks();
       audioTracks.forEach((track) => (track.enabled = false));
 
       localDataDispatch({
         type: setlocalAudioEnabled,
-        payload: { value: false },
+        payload: {
+          value: false,
+        },
       });
     },
     [socket, room, setlocalAudioEnabled, localDataDispatch]
@@ -578,39 +691,37 @@ function App() {
         ©️Developed and Maintained by Aman James
       </p>
       <div className="m-auto w-3/4 flex flex-col">
-        <VideoChat connObj={connObj} />
-
-        <div className="py-5 uppercase">
+        <div className="py-5 text-lg mb-5">
           {room ? (
             <>
-              <p className="text-green-500">Joined room {room}</p>
+              <p className="text-green-500">Joined Room {room}</p>
             </>
           ) : (
             <p className="text-red-500 ">Not connected to any room</p>
           )}
         </div>
-
-        <div className="flex gap-3 items-center justify-center ">
-          {remoteSocketIds.length === 0 && !room ? (
+        <VideoChat connObj={connObj} />
+        <br />
+        <div className="flex gap-3 items-center justify-center mb-16">
+          {remoteSocketIds.length === 0 && !room && (
             <>
               <button onClick={() => handleJoinRoom()}>Join Room</button>
               <button onClick={() => handleCreateRoom()}>Create Room</button>
             </>
-          ) : (
-            <>
-              {/* point to be checked  */}
-              <button onClick={() => handleEndCall()}>Leave Room</button>
-            </>
           )}
         </div>
-        <br />
 
         <section
-          className={`fixed bottom-4 left-1/2 transform -translate-x-1/2 rounded-md text-white px-6 py-2 flex gap-x-3 items-center justify-between p-2  bg-gray-800 w-3/4 ${
-            localStream ? "" : "hidden"
-          }`}
+          className={`fixed  bottom-5 left-1/2 transform -translate-x-1/2 rounded-md
+             text-white px-6 py-2 grid grid-cols-2 md:grid-cols-3  items-center shadow-lg
+             justify-center z-20 bg-gray-700 w-3/4 ${
+               localStream ? "" : "hidden"
+             }`}
         >
-          <div>
+          <div className="text-slate-950  hidden md:flex ">
+            <Clock /> | {room}
+          </div>
+          <div className="md:m-auto ">
             <div className="flex gap-x-3">
               <button
                 className={`${
@@ -642,7 +753,24 @@ function App() {
               </button>
             </div>
           </div>
-          <div>
+
+          {/* snackbar  */}
+          <Snackbar
+            visible={show}
+            onClose={() => setShow(null)}
+            message={show}
+          />
+          <div className="flex gap-x-5  items-center justify-end">
+            <span className="relative flex items-center justify-center">
+              <MdPeopleAlt className="text-3xl text-black" />
+
+              <span
+                className="absolute  bg-gray-800 -top-2 -right-2 text-red-500 text-sm p-3 font-bold w-4 h-4
+               flex items-center justify-center rounded-full"
+              >
+                {remoteSocketIds?.length + 1 || ""}
+              </span>
+            </span>
             <button
               className={"bg-red-600 text-white"}
               onClick={() => handleEndCall()}

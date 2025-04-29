@@ -21,7 +21,7 @@ function RemoteVideoCard({ remoteStream, name }) {
       {videoEnabled ? (
         <video
           muted={!audioEnabled}
-          className="w-full h-52 rounded-md"
+          className="w-full h-80 rounded-md"
           autoPlay
           ref={remoteVideoRef}
         ></video>
@@ -37,13 +37,16 @@ function RemoteVideoCard({ remoteStream, name }) {
           )}
         </div>
       )}
-      <div className="absolute w-10 h-10 rounded-full bg-red-400 flex items-center justify-center">
+      <div
+        className="absolute w-10 h-10 rounded-full  bg-gray-950 flex 
+      items-center justify-center"
+      >
         {audioEnabled ? (
-          <span className="bg-gray-500 rounded-full p-3 w-fit">
+          <span className="rounded-full w-fit">
             <FaMicrophone />
           </span>
         ) : (
-          <span className=" rounded-full p-3 w-fit">
+          <span className=" rounded-full  w-fit">
             <FaMicrophoneSlash />
           </span>
         )}

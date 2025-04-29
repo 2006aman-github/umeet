@@ -44,13 +44,16 @@ function VideoChat({ connObj }) {
     }
   }, [localStream, localVideoEnabled]);
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 justify-center gap-2  overflow-auto max-h-1/2 p-2 bg-gray-600 rounded-md">
+    <div
+      className="grid grid-cols-1 lg:grid-cols-2 justify-center gap-2  
+    overflow-auto max-h-1/2 p-2 bg-black rounded-md"
+    >
       <section className="flex flex-col w-full p-5 bg-slate-900 gap-y-5 rounded-md">
         <h2 className="text-lg uppercase">{localName || "Local Stream"}</h2>
         {localVideoEnabled ? (
           <video
             muted
-            className="w-full h-52 rounded-md"
+            className="w-full h-80 transform scale-x-[-1]"
             autoPlay
             ref={localVideoRef}
           ></video>
