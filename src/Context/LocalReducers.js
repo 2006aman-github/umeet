@@ -16,10 +16,9 @@ export const initialState = {
 };
 
 export const localDataReducers = (state, action) => {
-  console.log(state);
   switch (action.type) {
     case localReducerActions.setlocalSocketId:
-      return { ...state, localSocketId: action.payload.value };
+      return { ...state, localSocketId: action.payload.id };
     case localReducerActions.setlocalStream:
       return { ...state, localStream: action.payload.value };
     case localReducerActions.setlocalVideoEnabled:

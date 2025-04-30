@@ -18,13 +18,17 @@ import { MdCallEnd, MdPeopleAlt } from "react-icons/md";
 import { gracefulCloseOfPeerConnection } from "./utils/closePeerConnection";
 import Clock from "./Components/CurrentTime";
 import Snackbar from "./Components/Snackbar";
+import { IoChatboxEllipses } from "react-icons/io5";
+import ChatBox from "./Components/ChatBox";
+import { ChatContext } from "./Context/ChatContext";
+import { chatReducerActions } from "./Context/ChatReducers";
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL;
 
 function App() {
   const [socket, setSocket] = useState(null);
   const [room, setRoom] = useState(null);
-  const [incomingSocketId, setIncomingSocketId] = useState(null);
+  const [showChatBox, setshowChatBox] = useState(false);
   const [connObj, setConnObjs] = useState([]);
   const [show, setShow] = useState(null);
   // connObjo = {
@@ -37,6 +41,11 @@ function App() {
     remoteData: { remoteSocketIds, remoteStreams },
     remoteDataDispatch,
   } = useContext(RemoteContext);
+  const {
+    chatData: { unseenMessages },
+    chatDataDispatch,
+  } = useContext(ChatContext);
+
   // console.log(remoteSocketIds);
 
   // localdata context access
@@ -66,6 +75,7 @@ function App() {
     setlocalAudioEnabled,
     setlocalVideoEnabled,
     setlocalStream,
+    setlocalSocketId,
   } = localReducerActions;
   // console.log(remoteStreams);
 
@@ -80,7 +90,7 @@ function App() {
           id: data.id,
         },
       });
-      setIncomingSocketId(data.id);
+
       socket.emit("caller:join:complete", {
         to: data.id,
         name: localName, //this is my localName (local)
@@ -107,6 +117,13 @@ function App() {
     async ({ room, name, otherSockets }) => {
       // console.log("i joined yoo", otherSockets);
 
+      // set local socket id
+      localDataDispatch({
+        type: setlocalSocketId,
+        payload: {
+          id: socket?.id,
+        },
+      });
       // if im the only one in the room just start my video stream
       if (otherSockets.length === 0) {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -145,7 +162,14 @@ function App() {
         },
       });
     },
-    [setlocalName, localDataDispatch, setlocalStream, setlocalVideoEnabled]
+    [
+      setlocalName,
+      localDataDispatch,
+      setlocalStream,
+      setlocalVideoEnabled,
+      socket,
+      setlocalSocketId,
+    ]
   );
 
   const roomNotFound = useCallback(({ message }) => window.alert(message), []);
@@ -207,7 +231,7 @@ function App() {
         },
       });
       // console.log("oops receiving id", id);
-      setIncomingSocketId(id);
+
       handleCallUser(id, name);
       // remoteDataDispatch({
       //   type: setRemoteName,
@@ -515,6 +539,32 @@ function App() {
     setRoom(null);
   }, []);
 
+  // chat functions
+  const handleNewChatMessage = useCallback(
+    async (data) => {
+      chatDataDispatch({
+        type: chatReducerActions.setNewMessage,
+        payload: {
+          name: data.name,
+          socketid: data.from,
+          message: data.message,
+          isSeen: showChatBox,
+          time: data.time,
+        },
+      });
+    },
+    [chatDataDispatch, showChatBox]
+  );
+
+  const handleChatBoxToggle = () => {
+    if (!showChatBox) {
+      chatDataDispatch({
+        type: chatReducerActions.setAllMessagesSeen,
+      });
+    }
+    setshowChatBox((value) => !value);
+  };
+
   useEffect(() => {
     let newSocket = socket;
 
@@ -543,6 +593,9 @@ function App() {
     newSocket.on("remote:audio:restarted", handleRemoteAudioRestarted);
     newSocket.on("remote:audio:stopped", handleRemoteAudioStopped);
 
+    // chat box
+    newSocket.on("chat:new", handleNewChatMessage);
+
     return () => {
       newSocket.off("disconnect");
       newSocket.off("error:message", handleErrorMessage);
@@ -564,6 +617,8 @@ function App() {
       // audio related events
       newSocket.off("remote:audio:restarted", handleRemoteAudioRestarted);
       newSocket.off("remote:audio:stopped", handleRemoteAudioStopped);
+      // chat box
+      newSocket.off("chat:new", handleNewChatMessage);
     };
   }, [
     socket,
@@ -584,6 +639,9 @@ function App() {
     handleRemoteAudioRestarted,
     handleIncomingStreamRequest,
     handleNegotiaitionNeeded,
+    localDataDispatch,
+    setlocalSocketId,
+    handleNewChatMessage,
   ]);
 
   const handleCreateRoom = useCallback(() => {
@@ -754,21 +812,38 @@ function App() {
             </div>
           </div>
 
-          {/* snackbar  */}
-          <Snackbar
-            visible={show}
-            onClose={() => setShow(null)}
-            message={show}
-          />
           <div className="flex gap-x-5  items-center justify-end">
             <span className="relative flex items-center justify-center">
               <MdPeopleAlt className="text-3xl text-black" />
 
               <span
-                className="absolute  bg-gray-800 -top-2 -right-2 text-red-500 text-sm p-3 font-bold w-4 h-4
+                className="absolute  bg-gray-900 -top-2 -right-2 text-red-500 text-sm p-3 font-bold w-4 h-4
                flex items-center justify-center rounded-full"
               >
                 {remoteSocketIds?.length + 1 || ""}
+              </span>
+            </span>
+
+            <span
+              onClick={handleChatBoxToggle}
+              className="relative cursor-pointer flex items-center justify-center"
+            >
+              <IoChatboxEllipses
+                className={`text-3xl ${
+                  !showChatBox ? "text-gray-900" : "text-white"
+                }`}
+              />
+              <span
+                className={`absolute  ${
+                  !showChatBox
+                    ? "text-red-500 bg-white"
+                    : "bg-gray-900 text-white"
+                } ${
+                  unseenMessages === 0 && "hidden"
+                } -top-2 -right-2 text-sm p-3 font-bold w-4 h-4
+               flex items-center justify-center rounded-full`}
+              >
+                {unseenMessages !== 0 ? unseenMessages : ""}
               </span>
             </span>
             <button
@@ -781,6 +856,18 @@ function App() {
         </section>
         <br />
       </div>
+
+      {/* misselaneous elements  */}
+      {/* snackbar  */}
+      <Snackbar visible={show} onClose={() => setShow(null)} message={show} />
+      {/* chat box  */}
+      {showChatBox && (
+        <ChatBox
+          socketInstance={socket}
+          room={room}
+          onClose={handleChatBoxToggle}
+        />
+      )}
     </div>
   );
 }
